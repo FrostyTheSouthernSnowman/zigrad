@@ -9,6 +9,7 @@ const Op = enum {
 pub const Value = struct {
     value: f16,
     grad: f16,
+    propagated: bool,
     children: std.ArrayList(*Value),
     op: Op,
     allocator: std.mem.Allocator,
@@ -20,7 +21,8 @@ pub const Value = struct {
 
         self.* = .{
             .value = value,
-            .grad = 1.0,
+            .grad = 0.0,
+            .propagated = false,
             .children = std.ArrayList(*Value).init(allocator),
             .op = Op.CONST,
             .allocator = allocator,
@@ -30,6 +32,18 @@ pub const Value = struct {
     }
 
     pub fn backward(self: *Self) void {
+        self.grad = 1.0;
+        self.backprop();
+    }
+
+    pub fn backprop(self: *Self) void {
+        if (self.propagated) {
+            return;
+        }
+
+        self.propagated = true;
+
+        // By computing the local gradient and then the gradient of the children, we've effectively built a topological sort without actually needing to store the sorted states
         switch (self.op) {
             .ADD => {
                 if (self.children.items.len >= 2) {
@@ -47,7 +61,7 @@ pub const Value = struct {
         }
 
         for (self.children.items) |child| {
-            child.backward();
+            child.backprop();
         }
     }
 
@@ -63,8 +77,8 @@ pub const Value = struct {
     }
 
     fn add_backward(self: *Self, other: *Self, out_grad: f16) void {
-        self.grad = out_grad;
-        other.grad = out_grad;
+        self.grad += out_grad;
+        other.grad += out_grad;
     }
 
     pub fn mul(self: *Self, other: *Self) !*Self {
@@ -79,8 +93,8 @@ pub const Value = struct {
     }
 
     fn mul_backward(self: *Self, other: *Self, out_grad: f16) void {
-        self.grad = other.value * out_grad;
-        other.grad = self.value * out_grad;
+        self.grad += other.value * out_grad;
+        other.grad += self.value * out_grad;
     }
 };
 
@@ -122,4 +136,48 @@ test "Multiplication" {
     try std.testing.expectEqual(1.0, c.grad);
     try std.testing.expectEqual(2.0, b.grad);
     try std.testing.expectEqual(3.0, a.grad);
+}
+
+test "Chain Rule" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const a = try Value.init(allocator, 2.0);
+    const b = try Value.init(allocator, 3.0);
+    const c = try Value.init(allocator, 1.0);
+
+    const d = try a.mul(b);
+    const e = try d.add(c);
+
+    try std.testing.expectEqual(6.0, d.value);
+    try std.testing.expectEqual(7.0, e.value);
+
+    e.backward();
+
+    try std.testing.expectEqual(1.0, e.grad);
+    try std.testing.expectEqual(1.0, d.grad);
+    try std.testing.expectEqual(1.0, c.grad);
+    try std.testing.expectEqual(2.0, b.grad);
+    try std.testing.expectEqual(3.0, a.grad);
+}
+
+test "Edge Cases" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const a = try Value.init(allocator, 2.0);
+
+    const b = try a.add(a);
+
+    const c = try b.mul(b);
+
+    try std.testing.expectEqual(16.0, c.value);
+
+    c.backward();
+
+    try std.testing.expectEqual(1.0, c.grad);
+    try std.testing.expectEqual(8.0, b.grad);
+    try std.testing.expectEqual(16.0, a.grad);
 }
