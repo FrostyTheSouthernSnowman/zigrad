@@ -8,6 +8,6 @@ My first project in Zig and first autograd engine. Expect some rough edges.
 
 Don't use it. It's not meant to be used. Just watch
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/VMj-3S1tku0?si=vad-v_SFYkp6GoWR" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+[![Karpathy's Neural Network Video](https://img.youtube.com/vi/VMj-3S1tku0/0.jpg)](https://www.youtube.com/watch?v=VMj-3S1tku0)
 
 and reimplement it all for yourself in your language of choice.
