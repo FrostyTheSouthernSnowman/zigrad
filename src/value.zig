@@ -3,7 +3,9 @@ const constants = @import("constants.zig");
 
 const Op = enum {
     ADD,
+    SUB,
     MUL,
+    POW,
     TANH,
     CONST,
 };
@@ -52,9 +54,19 @@ pub const Value = struct {
                     self.children.items[0].add_backward(self.children.items[1], self.grad);
                 }
             },
+            .SUB => {
+                if (self.children.items.len >= 2) {
+                    self.children.items[0].sub_backward(self.children.items[1], self.grad);
+                }
+            },
             .MUL => {
                 if (self.children.items.len >= 2) {
                     self.children.items[0].mul_backward(self.children.items[1], self.grad);
+                }
+            },
+            .POW => {
+                if (self.children.items.len >= 2) {
+                    self.children.items[0].pow_backward(self.children.items[1], self.grad);
                 }
             },
             .TANH => {
@@ -88,6 +100,22 @@ pub const Value = struct {
         other.grad += out_grad;
     }
 
+    pub fn sub(self: *Self, other: *Self) !*Self {
+        const result = try Value.init(self.allocator, self.value - other.value);
+
+        try result.children.append(self);
+        try result.children.append(other);
+
+        result.op = Op.SUB;
+
+        return result;
+    }
+
+    fn sub_backward(self: *Self, other: *Self, out_grad: f32) void {
+        self.grad += out_grad;
+        other.grad -= out_grad;
+    }
+
     pub fn mul(self: *Self, other: *Self) !*Self {
         const result = try Value.init(self.allocator, self.value * other.value);
 
@@ -102,6 +130,22 @@ pub const Value = struct {
     fn mul_backward(self: *Self, other: *Self, out_grad: f32) void {
         self.grad += other.value * out_grad;
         other.grad += self.value * out_grad;
+    }
+
+    pub fn pow(self: *Self, other: *Self) !*Self {
+        const result = try Value.init(self.allocator, std.math.pow(f32, self.value, other.value));
+
+        try result.children.append(self);
+        try result.children.append(other);
+
+        result.op = Op.POW;
+
+        return result;
+    }
+
+    fn pow_backward(self: *Self, other: *Self, out_grad: f32) void {
+        self.grad += other.value * std.math.pow(f32, self.value, other.value - 1) * out_grad;
+        other.grad += std.math.pow(f32, self.value, other.value) * std.math.log(f32, constants.e, self.value) * out_grad;
     }
 
     pub fn tanh(self: *Self) !*Self {
@@ -143,6 +187,26 @@ test "Addition" {
     try std.testing.expectEqual(1.0, a.grad);
 }
 
+test "Subtraction" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const a: *Value = try Value.init(allocator, 2.0);
+    const b: *Value = try Value.init(allocator, 3.0);
+
+    const c: *Value = try a.sub(b);
+    defer c.children.deinit();
+
+    try std.testing.expectEqual(-1.0, c.value);
+
+    c.backward();
+
+    try std.testing.expectEqual(1.0, c.grad);
+    try std.testing.expectEqual(-1.0, b.grad);
+    try std.testing.expectEqual(1.0, a.grad);
+}
+
 test "Multiplication" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -161,6 +225,21 @@ test "Multiplication" {
     try std.testing.expectEqual(1.0, c.grad);
     try std.testing.expectEqual(2.0, b.grad);
     try std.testing.expectEqual(3.0, a.grad);
+}
+
+test "Power" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    const a: *Value = try Value.init(allocator, 2.0);
+    const b: *Value = try Value.init(allocator, 3.0);
+    const c: *Value = try a.pow(b);
+    defer c.children.deinit();
+    try std.testing.expectEqual(8.0, c.value);
+    c.backward();
+    try std.testing.expectEqual(1.0, c.grad);
+    try std.testing.expectApproxEqRel(std.math.pow(f32, 2.0, 3.0) * std.math.log(f32, constants.e, 2.0), b.grad, 0.0001);
+    try std.testing.expectApproxEqRel(3.0 * std.math.pow(f32, 2.0, 2.0), a.grad, 0.0001);
 }
 
 test "Chain Rule" {
