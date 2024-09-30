@@ -120,6 +120,17 @@ pub const MLP = struct {
 
         return current_inputs;
     }
+
+    pub fn update(self: *MLP, lr: f32) void {
+        for (self.layers.items) |layer| {
+            for (layer.neurons.items) |neuron| {
+                for (neuron.weights.items) |weight| {
+                    weight.value -= lr * weight.grad;
+                }
+                neuron.bias.value -= lr * neuron.bias.grad;
+            }
+        }
+    }
 };
 
 test "mlp" {
