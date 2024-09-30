@@ -29,7 +29,7 @@ test "full neural network" {
 
     const model = try nn.MLP.init(allocator, 1, &.{ 1, 1 });
 
-    const epochs = 10;
+    const epochs = 40;
 
     for (0..epochs) |epoch| {
         var avg_loss: f32 = 0.0;
@@ -44,7 +44,7 @@ test "full neural network" {
             try actual.append(y);
             const loss = try optim.mse(allocator, pred, actual);
             loss.backward();
-            model.update(0.1);
+            model.update(0.00001);
 
             avg_loss += loss.value;
         }
