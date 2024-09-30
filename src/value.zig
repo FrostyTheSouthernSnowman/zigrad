@@ -5,6 +5,7 @@ const Op = enum {
     ADD,
     SUB,
     MUL,
+    DIV,
     POW,
     TANH,
     CONST,
@@ -62,6 +63,11 @@ pub const Value = struct {
             .MUL => {
                 if (self.children.items.len >= 2) {
                     self.children.items[0].mul_backward(self.children.items[1], self.grad);
+                }
+            },
+            .DIV => {
+                if (self.children.items.len >= 2) {
+                    self.children.items[0].div_backward(self.children.items[1], self.grad);
                 }
             },
             .POW => {
@@ -130,6 +136,22 @@ pub const Value = struct {
     fn mul_backward(self: *Self, other: *Self, out_grad: f32) void {
         self.grad += other.value * out_grad;
         other.grad += self.value * out_grad;
+    }
+
+    pub fn div(self: *Self, other: *Self) !*Self {
+        const result = try Value.init(self.allocator, self.value / other.value);
+
+        try result.children.append(self);
+        try result.children.append(other);
+
+        result.op = Op.DIV;
+
+        return result;
+    }
+
+    fn div_backward(self: *Self, other: *Self, out_grad: f32) void {
+        self.grad += out_grad / other.value;
+        other.grad += -self.value * out_grad / std.math.pow(f32, other.value, 2);
     }
 
     pub fn pow(self: *Self, other: *Self) !*Self {
@@ -225,6 +247,26 @@ test "Multiplication" {
     try std.testing.expectEqual(1.0, c.grad);
     try std.testing.expectEqual(2.0, b.grad);
     try std.testing.expectEqual(3.0, a.grad);
+}
+
+test "Division" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const a: *Value = try Value.init(allocator, 2.0);
+    const b: *Value = try Value.init(allocator, 3.0);
+
+    const c: *Value = try a.div(b);
+    defer c.children.deinit();
+
+    try std.testing.expectEqual(2.0 / 3.0, c.value);
+
+    c.backward();
+
+    try std.testing.expectEqual(1.0, c.grad);
+    try std.testing.expectEqual(-2.0 / 9.0, b.grad);
+    try std.testing.expectEqual(1.0 / 3.0, a.grad);
 }
 
 test "Power" {
